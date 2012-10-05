@@ -16,6 +16,8 @@ import mimetypes
 import os
 import time
 
+from os.path import abspath, relpath, commonprefix
+
 
 class Staticfile:
     """ Generic class that you can use to dispatch static files
@@ -25,17 +27,22 @@ class Staticfile:
     NOTE: you must be consistent between /rootpath/ and /static/ concerning the ending "/"
     """
     def __init__(self, rootpath="", maxage=None):
-        self.rootpath = rootpath
+        self.rootpath = abspath(rootpath)
         self.maxage = maxage
 
     def __call__(self, environ, start_response):
-        fpath = self.rootpath + environ['PATH_INFO']
+        # Figure out the absolute path requested, removing any relative path segments
+        fpath = abspath(relpath(environ['PATH_INFO'], self.rootpath))
+        
+        # Make sure that the requested path is inside the root path folder
+        if not fpath.startswith(self.rootpath):
+            return self.respond_not_found(environ, start_response, fpath)
+        
         try:
             f = open(fpath, "rb")
         except:
-            print "ERROR in Staticfile: file %s not existing" % (fpath)
-            start_response('404 File not found', [])
-            return []
+            return self.respond_not_found(environ, start_response, fpath)
+        
         fmtime = os.path.getmtime(fpath)
         if environ.get('HTTP_IF_NONE_MATCH', 'NONE') != str(fmtime):
             headers = []
@@ -52,3 +59,8 @@ class Staticfile:
             #print "SAME", environ['fapws.uri']
             start_response('304 Not Modified', [])
             return []
+            
+    def respond_not_found(self, environ, start_response, fpath):
+        print "ERROR in Staticfile: file %s not existing" % (fpath)
+        start_response('404 File not found', [])
+        return []
